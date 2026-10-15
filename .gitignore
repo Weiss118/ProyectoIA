@@ -1,0 +1,17 @@
+# IntelliJ: solo se comparte lo que describe el proyecto
+.idea/*
+!.idea/libraries/
+!.idea/runConfigurations/
+!.idea/modules.xml
+!.idea/misc.xml
+
+# Compilados
+out/
+
+# Archivos que JADE genera al correr
+APDescription.txt
+MTPs-Main-Container.txt
+
+# Sistema
+.DS_Store
+Thumbs.db
