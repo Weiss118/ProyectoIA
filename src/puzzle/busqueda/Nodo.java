@@ -1,9 +1,5 @@
 package puzzle.busqueda;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 /**
  * Nodo del árbol de búsqueda: estado, padre, movimiento y h (lo acordado por el equipo),
  * más profundidad y orden:
@@ -29,14 +25,13 @@ public class Nodo implements Comparable<Nodo> {
         this.orden = orden;
     }
 
-    /** Greedy: f(n) = h(n). Empate -> el que se insertó primero (FIFO). */
     @Override
     public int compareTo(Nodo otro) {
         int c = Integer.compare(this.h, otro.h);
         return (c != 0) ? c : Long.compare(this.orden, otro.orden);
     }
 
-    /** Movimientos desde la raíz hasta este nodo, p. ej. "RURDDLURD". */
+    /** Movimientos desde la raíz hasta este nodo*/
     public String reconstruirCamino() {
         StringBuilder sb = new StringBuilder();
         for (Nodo n = this; n.padre != null; n = n.padre) {

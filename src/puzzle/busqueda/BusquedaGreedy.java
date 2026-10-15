@@ -8,19 +8,14 @@ import java.util.HashSet;
 import java.util.PriorityQueue;
 import java.util.Set;
 
-/**
- * Greedy Best-First Search: f(n) = h(n).
- * La heurística se recibe por constructor: el mismo código sirve para los 3 jugadores.
- * Con setTraza(true) imprime cada iteración para ver qué está haciendo.
- */
 
 public class BusquedaGreedy {
 
-    /** El espacio resoluble tiene 181,440 estados; con esto nunca se corta un caso válido. */
+    /** El espacio resoluble tiene 181,440 estados. Con esto nunca se corta un caso válido. */
     public static final int LIMITE_NODOS_DEFAULT = 200_000;
 
-    private final Heuristica heuristica;
-    private final int limiteNodos;
+    private  Heuristica heuristica;
+    private  int limiteNodos;
     private boolean traza = false;
 
     public BusquedaGreedy(Heuristica heuristica) {
@@ -48,7 +43,7 @@ public class BusquedaGreedy {
             return Resultado.falla(Resultado.FALLA_NO_RESOLUBLE, 0, ms(t0));
         }
 
-        long contador = 0;                                      // para desempatar en la cola
+        int contador = 0;                                      // para desempatar en la cola
         PriorityQueue<Nodo> frontera = new PriorityQueue<>();   // ordenada por Nodo.compareTo
         Set<String> visitados = new HashSet<>();                // estados ya generados
 
@@ -69,12 +64,12 @@ public class BusquedaGreedy {
                 return Resultado.falla(Resultado.FALLA_LIMITE, expandidos, ms(t0));
             }
 
-            // 4. Generar sucesores (2, 3 o 4)
+            //Generar sucesores (2, 3 o 4)
             StringBuilder generados = traza ? new StringBuilder() : null;
             for (char m : Tablero.movimientos()) {
                 String siguiente = Tablero.mover(actual.estado, m);
-                if (siguiente == null) continue;                 // se sale del tablero
-                if (!visitados.add(siguiente)) {                 // ya visto -> evita ciclos
+                if (siguiente == null) continue;  //se sale del tablero
+                if (!visitados.add(siguiente)) {  //evita ciclos
                     if (traza) generados.append(m).append(":visto ");
                     continue;
                 }
@@ -92,8 +87,8 @@ public class BusquedaGreedy {
     }
 
     private static void imprimir(int it, Nodo n, String detalle, int tamFrontera) {
-        System.out.printf("it %3d | saca %s h=%d mov=%c prof=%d | %s| frontera=%d%n",
-                it, n.estado, n.h, n.movimiento, n.profundidad, detalle, tamFrontera);
+        System.out.printf("it %3d | saca %s h=%d mov=%c | %s| frontera=%d%n",
+                it, n.estado, n.h, n.movimiento, detalle, tamFrontera);
     }
 
     private static long ms(long t0) {
