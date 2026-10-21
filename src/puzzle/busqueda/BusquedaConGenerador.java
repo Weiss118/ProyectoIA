@@ -1,6 +1,7 @@
 package puzzle.busqueda;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -48,27 +49,40 @@ public class BusquedaConGenerador {
         public final int nodosExpandidos;
         public final long tiempoMs;
         public final String motivoFalla;    // null si hubo éxito
+        /** Estados del camino, del inicial a la meta. Tiene longitud+1 elementos; vacía si falló. */
+        public final List<String> estados;
 
-        private ResultadoBusqueda(boolean exito, String secuencia, int nodos, long ms, String motivo) {
+        private ResultadoBusqueda(boolean exito, String secuencia, int nodos, long ms, String motivo,
+                                  List<String> estados) {
             this.exito = exito;
             this.secuencia = secuencia;
             this.longitud = secuencia.length();
             this.nodosExpandidos = nodos;
             this.tiempoMs = ms;
             this.motivoFalla = motivo;
+            this.estados = estados;
         }
 
-        static ResultadoBusqueda exito(String secuencia, int nodos, long ms) {
-            return new ResultadoBusqueda(true, secuencia, nodos, ms, null);
+        static ResultadoBusqueda exito(String secuencia, int nodos, long ms, List<String> estados) {
+            return new ResultadoBusqueda(true, secuencia, nodos, ms, null, estados);
         }
 
         static ResultadoBusqueda falla(String motivo, int nodos, long ms) {
-            return new ResultadoBusqueda(false, "", nodos, ms, motivo);
+            return new ResultadoBusqueda(false, "", nodos, ms, motivo, new ArrayList<>());
         }
 
         /** Formato acordado del INFORM a la GUI: secuencia;longitud;nodos;tiempoMs */
         public String aInform() {
             return secuencia + ";" + longitud + ";" + nodosExpandidos + ";" + tiempoMs;
+        }
+
+        /**
+         * Variante de 5 campos con los estados del camino: secuencia;longitud;nodos;tiempoMs;estados
+         * (estados separados por coma). NO se usa todavía: el contrato con la GUI sigue siendo
+         * el de 4 campos hasta que el equipo lo acuerde (ver seccion 3 del documento).
+         */
+        public String aInformConEstados() {
+            return aInform() + ";" + String.join(",", estados);
         }
 
         @Override
@@ -105,6 +119,14 @@ public class BusquedaConGenerador {
             StringBuilder sb = new StringBuilder();
             for (Nodo n = this; n.padre != null; n = n.padre) sb.append(n.movimiento);
             return sb.reverse().toString();
+        }
+
+        /** Los estados del camino, del inicial (raíz) a este nodo. Uno más que movimientos. */
+        List<String> caminoEstados() {
+            List<String> lista = new ArrayList<>();
+            for (Nodo n = this; n != null; n = n.padre) lista.add(n.estado);
+            Collections.reverse(lista);
+            return lista;
         }
     }
 
@@ -168,7 +190,7 @@ public class BusquedaConGenerador {
         actual = frontera.poll();
         expandidos++;
         if (actual.estado.equals(META)) {
-            return terminar(ResultadoBusqueda.exito(actual.camino(), expandidos, ms()));
+            return terminar(ResultadoBusqueda.exito(actual.camino(), expandidos, ms(), actual.caminoEstados()));
         }
         if (expandidos >= limiteNodos) {
             return terminar(ResultadoBusqueda.falla(ResultadoBusqueda.FALLA_LIMITE, expandidos, ms()));

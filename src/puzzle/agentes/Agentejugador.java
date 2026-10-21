@@ -34,6 +34,14 @@ public abstract class Agentejugador extends Agent {
     /** Cada hijo devuelve su propia heurística. */
     protected abstract Heuristica crearHeuristica();
 
+    /**
+     * Gancho opcional: se llama DESPUÉS de haberle contestado a quien mandó el reto.
+     * Por defecto no hace nada, así que los jugadores que no lo sobreescriban se comportan igual que antes.
+     * Lo usa AgenteJugador1 para abrir su ventana paso a paso sin retrasar el INFORM.
+     * Ojo: corre en el hilo del agente, así que nada de Swing directo (usar SwingUtilities.invokeLater).
+     */
+    protected void alTerminar(ResultadoBusqueda resultado) { }
+
     private Heuristica heuristica;
     private BusquedaConGenerador busqueda;  // la búsqueda en curso
     private ACLMessage solicitud;           // el reto que atiendo (null = estoy libre)
@@ -129,6 +137,13 @@ public abstract class Agentejugador extends Agent {
         while (receive(MessageTemplate.MatchConversationId(conversacion)) != null) { /* limpia respuestas tardías */ }
         solicitud = null;                                         // libre para otro reto
         busqueda = null;
+
+        // Ya contestamos y estamos libres: ahora lo opcional. Si el gancho falla, el agente sigue vivo.
+        try {
+            alTerminar(r);
+        } catch (RuntimeException e) {
+            System.out.println(getLocalName() + " aviso: alTerminar() falló (" + e + "), la búsqueda sí terminó bien");
+        }
     }
 
     private boolean tiempoAgotado() {

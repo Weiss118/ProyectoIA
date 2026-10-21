@@ -18,6 +18,7 @@ public class PruebaJade {
             {"jugador3",   "puzzle.agentes.AgenteJugador3"},
             {"generador",  "puzzle.pruebas.AgenteGeneradorMock"},
             {"despliegue", "puzzle.pruebas.AgenteDespliegueMock"},
+            {"sonda",      "puzzle.pruebas.SondaGenerador"},        // diagnóstico, va al final
     };
 
     public static void main(String[] args) throws Exception {
@@ -56,7 +57,7 @@ public class PruebaJade {
         for (String nombre : pedidos) {
             if (!conocido(nombre)) {
                 System.out.println("PruebaJade: AVISO, no conozco el agente '" + nombre + "'. Opciones: "
-                        + "jugador1 jugador2 jugador3 jugadores generador despliegue");
+                        + "jugador1 jugador2 jugador3 jugadores generador despliegue sonda");
             }
         }
         if (creados == 0) {

@@ -47,6 +47,7 @@ JugadorN ──FAILURE content=<motivo>──▶ Despliegue
 - **`BusquedaConGenerador`** (`puzzle.busqueda`, sin JADE): Greedy incremental. `iniciar(estado)` → estado cuyos hijos pedir (o null si terminó); `recibirHijos(lista)` → siguiente estado a pedir (o null); `getResultado()` → `ResultadoBusqueda` con `aInform()`. Incluye `Nodo`, `Hijo`, `ResultadoBusqueda`, validación, resolubilidad y `parsearHijos/formatearHijos`.
 - **Heurísticas** (`implements Heuristica { int calcular(String); String nombre(); }`): `Hamming`, `Manhattan`, `ConflictoLineal`.
 - **Jugadores**: `AgenteJugador1` (Hamming), `AgenteJugador2` (Manhattan), `AgenteJugador3` (ConflictoLineal), todos `extends Agentejugador`.
+- **`VentanaJugador`** (`puzzle.gui`): visor Swing paso a paso de UN jugador. No manda ni recibe mensajes; es independiente de la GUI del equipo (Integrante 4). Hoy solo lo usa `AgenteJugador1`, vía el gancho `alTerminar()`. Se apaga con `-DsinVentana=true`.
 - **Mocks** (`puzzle.pruebas`): `AgenteGeneradorMock` (responde hijos usando `TableroPrueba`; opciones `-DretardoMs`, `-DsinMovimiento=true`, `-DsinConversacion=true`) y `AgenteDespliegueMock` (manda el reto al agente indicado por `-Djugador=...`, default `jugador3`, y verifica que la secuencia llegue a la meta; tablero por argumento o `-Destado=...`).
 - **`PruebaJade`**: lanzador. Argumentos `<modo> [agentes...]`; modo `local` (todo en una PC), `principal`, o la IP del contenedor principal. Opciones `-Destado`, `-DmiIp`, `-DsinGui=true`, `-DpuertoLocal`.
 - **Pruebas sin JADE**: `PruebaJugador3` y `PruebaJugadores12` (valores conocidos + 200 tableros, mismo motor que el agente).
@@ -84,9 +85,18 @@ Tablero `182043765`: las tres dan `RURDDLURD` (9 movimientos; 11, 10 y 10 nodos)
 | generador con `-DsinMovimiento=true -DsinConversacion=true` | INFORM correcto: el jugador deduce el movimiento y reconoce la respuesta por el remitente |
 
 **Falta:**
-1. Verificar con el Sniffer de JADE (RMA → Tools → Start Sniffer) los REQUEST/INFORM entre despliegue, jugador y generador.
-2. Conectar con los agentes reales de los compañeros (ver sección 8).
+1. **Bloqueante — el Generador real responde INFORM con content vacío.** Diagnosticado el 21-oct-2026 con `SondaGenerador` contra la plataforma del Integrante 1 (`10.21.59.160`). Detalle y qué pedirle en la sección 8.
+2. Verificar con el Sniffer de JADE (RMA → Tools → Start Sniffer) los REQUEST/INFORM entre despliegue, jugador y generador.
 3. Cerrar con el equipo si el INFORM lleva 4 o 5 campos (ver sección 3).
+4. El agente de la GUI del equipo se llama `agenteGUI`, no `despliegue`. No afecta al jugador (contesta con `createReply()` a quien lo retó), pero conviene anotarlo.
+
+**Agregado el 21-oct-2026 — ventana paso a paso del Jugador 1:**
+
+- `BusquedaConGenerador` ahora guarda los **estados** del camino, no solo los movimientos: `Nodo.caminoEstados()` y el campo `ResultadoBusqueda.estados` (longitud+1 elementos; lista vacía, nunca null, si falló). Verificado en 60 tableros: cada estado se deriva del anterior aplicando el movimiento correspondiente, empieza en el inicial y acaba en la meta.
+- `aInform()` **no cambió**: sigue siendo de 4 campos. Se añadió `aInformConEstados()` (5 campos) listo para cuando el equipo decida, pero nadie lo llama todavía.
+- `Agentejugador` tiene un gancho nuevo `protected void alTerminar(ResultadoBusqueda)`, vacío por defecto, que se llama **después** de enviar la respuesta y de quedar libre, envuelto en try/catch. Jugador 2 y Jugador 3 no cambian de comportamiento.
+- `AgenteJugador1` lo sobreescribe para abrir `VentanaJugador`. Si la búsqueda falla no abre nada.
+- Dos bugs de layout corregidos en la ventana al probarla: el marco salía de 506×241 en vez de 440×395 porque el gestor de ventanas imponía su geometría, y el tablero se quedaba con casillas de 12 px. Se arregló con `setMinimumSize` en el marco tras `pack()` y cambiando el panel inferior de `GridLayout` (filas iguales, acaparaba 130 px) a `BoxLayout`.
 
 ## 6. Problemas conocidos
 
@@ -184,6 +194,55 @@ Dos contenedores en la MISMA PC: al segundo hay que darle `-DpuertoLocal=1100` (
 
 Mientras el generador real no exista, cualquiera puede levantar el mock: añadir `generador` a la lista de agentes. Si ya existe el real, **no** levantarlo: dos agentes con el mismo nombre local no pueden coexistir en la plataforma.
 
+### Diagnóstico de interoperabilidad: `SondaGenerador`
+
+`puzzle.pruebas.SondaGenerador` es una herramienta de diagnóstico (no parte del sistema). Se lanza con `PruebaJade ... sonda` y hace tres cosas:
+
+1. Pregunta al AMS la lista completa de agentes con sus nombres locales exactos. Ojo: hay que poner `constraints.setMaxResults(-1L)`; con los `SearchConstraints` por defecto **el AMS devuelve un solo agente** y parece que la plataforma está casi vacía.
+2. Manda un REQUEST al generador por cada formato de contenido plausible (el acordado de 9 chars, dígitos con coma, con espacio, filas, JSON...) y vuelca TODO lo que contesta: performativa, remitente, conversation-id, in-reply-to, ontología, protocolo, lenguaje y content en crudo.
+3. Pasa cada respuesta por `BusquedaConGenerador.parsearHijos()` y dice cuántos hijos entendió y cuántos son válidos.
+
+```bash
+java -DmiIp=<mi ip> -DpuertoLocal=1100 -DesperaMs=6000 \
+     -cp out/production/8puzzle-jade:lib/jade.jar \
+     puzzle.pruebas.PruebaJade <ip del principal> sonda
+```
+
+(`-DpuertoLocal` solo si ya hay otro contenedor tuyo en el 1099. Opciones: `-Dgenerador=`, `-Destado=`, `-DunSoloFormato=true`.)
+
+### Resultado del sondeo del 21-oct-2026 (Generador del Integrante 1)
+
+Agentes en la plataforma: `agenteGUI`, `generador`, `rma`, `da0` (Dummy Agent), `ams`, `df`.
+
+Lo que **sí** funciona — el transporte está perfecto, no hay nada que arreglar del lado de la red ni de los jugadores:
+
+| Comprobación | Resultado |
+|---|---|
+| El generador se llama exactamente `generador` | sí, coincide con el default del jugador |
+| Es alcanzable desde otra PC | sí, contesta en milisegundos |
+| Responde con performativa INFORM | sí |
+| Copia el `conversation-id` del REQUEST | sí (usa `createReply()`) |
+| Acepta el formato de estado acordado (`182043765`) | sí: es el único al que contesta; los demás los ignora en silencio |
+
+Lo que **no**:
+
+> **El INFORM llega con `content` vacío (`[]`), siempre.** Probado con `182043765`, `867254301` y `123456780` (la meta). Nunca manda hijos.
+
+Efecto en el jugador: `parsearHijos("")` devuelve lista vacía → no entra nada a la frontera → la frontera se vacía → el jugador contesta `FAILURE no-resoluble` aunque el tablero sí tenga solución. Es un falso negativo, no un error de comunicación.
+
+**Qué pedirle al Integrante 1** (es un cambio de una línea en su agente, el `setContent`):
+
+> Al recibir `REQUEST` con `content="182043765"`, responder con
+> `INFORM` y `content="U:812403765,D:182743065,R:182403765"`
+>
+> - `movimiento:estado`, varios separados por coma, sin espacios.
+> - El movimiento es hacia dónde se mueve el **hueco** (`U D L R`), no la ficha.
+> - Solo los hijos legales: 2, 3 o 4 según dónde esté el hueco.
+> - Si le resulta más fácil, también se acepta mandar **solo los estados**: `"812403765,182743065,182403765"`; el jugador deduce el movimiento comparando dónde quedó el `0`. Esto ya está probado y funciona.
+> - Si el estado llega mal formado, responder `FAILURE` con `content="estado-invalido"` en lugar de un INFORM vacío, para distinguir el error del "no hay hijos".
+
+Mientras eso no esté, el mock `AgenteGeneradorMock` hace exactamente lo correcto y sirve de referencia: ver `formatearHijos()` en `BusquedaConGenerador`.
+
 ### Checklist cuando algo no conecta
 
 1. ¿Se ven en la red? `ping -c2 <ip del compañero>` y luego `nc -zv <ip del principal> 1099`. Si el ping falla, es *client isolation* o están en redes distintas: el problema es la red, no JADE. Si el ping pasa pero el `nc` no, el principal no está levantado o se anunció con otra IP.
@@ -234,6 +293,14 @@ public abstract class Agentejugador extends Agent {
 
     /** Cada hijo devuelve su propia heurística. */
     protected abstract Heuristica crearHeuristica();
+
+    /**
+     * Gancho opcional: se llama DESPUÉS de haberle contestado a quien mandó el reto.
+     * Por defecto no hace nada, así que los jugadores que no lo sobreescriban se comportan igual que antes.
+     * Lo usa AgenteJugador1 para abrir su ventana paso a paso sin retrasar el INFORM.
+     * Ojo: corre en el hilo del agente, así que nada de Swing directo (usar SwingUtilities.invokeLater).
+     */
+    protected void alTerminar(ResultadoBusqueda resultado) { }
 
     private Heuristica heuristica;
     private BusquedaConGenerador busqueda;  // la búsqueda en curso
@@ -330,6 +397,13 @@ public abstract class Agentejugador extends Agent {
         while (receive(MessageTemplate.MatchConversationId(conversacion)) != null) { /* limpia respuestas tardías */ }
         solicitud = null;                                         // libre para otro reto
         busqueda = null;
+
+        // Ya contestamos y estamos libres: ahora lo opcional. Si el gancho falla, el agente sigue vivo.
+        try {
+            alTerminar(r);
+        } catch (RuntimeException e) {
+            System.out.println(getLocalName() + " aviso: alTerminar() falló (" + e + "), la búsqueda sí terminó bien");
+        }
     }
 
     private boolean tiempoAgotado() {
@@ -343,15 +417,39 @@ public abstract class Agentejugador extends Agent {
 ```java
 package puzzle.agentes;
 
+import puzzle.busqueda.BusquedaConGenerador.ResultadoBusqueda;
 import puzzle.busqueda.Hamming;
 import puzzle.busqueda.Heuristica;
+import puzzle.gui.VentanaJugador;
 
-/** Agente Jugador 1: Greedy con la Heurística 1 (Hamming, fichas fuera de lugar). */
+/**
+ * Agente Jugador 1: Greedy con la Heurística 1 (Hamming, fichas fuera de lugar).
+ *
+ * Además de responder el INFORM a la GUI (eso lo hace Agentejugador), abre una ventana
+ * local con el recorrido paso a paso. La ventana es solo un visor: no manda mensajes.
+ */
 public class AgenteJugador1 extends Agentejugador {
+
+    private static final String TITULO = "Agente 1 (Hamming)";
 
     @Override
     protected Heuristica crearHeuristica() {
         return new Hamming();
+    }
+
+    /** Se llama después de haber contestado, así que la ventana no retrasa el INFORM. */
+    @Override
+    protected void alTerminar(ResultadoBusqueda resultado) {
+        if (!resultado.exito) {
+            System.out.println(getLocalName() + ": no abro ventana, la búsqueda falló ("
+                    + resultado.motivoFalla + ")");
+            return;
+        }
+        // Historial de estados del camino: "182043765", "182403765", ... hasta "123456780"
+        VentanaJugador.mostrar(TITULO, resultado.estados,
+                "Hamming  |  " + resultado.longitud + " movimientos  |  "
+                        + resultado.nodosExpandidos + " nodos expandidos  |  "
+                        + resultado.tiempoMs + " ms");
     }
 }
 ```
@@ -534,6 +632,7 @@ public class ConflictoLineal implements Heuristica {
 package puzzle.busqueda;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -581,27 +680,40 @@ public class BusquedaConGenerador {
         public final int nodosExpandidos;
         public final long tiempoMs;
         public final String motivoFalla;    // null si hubo éxito
+        /** Estados del camino, del inicial a la meta. Tiene longitud+1 elementos; vacía si falló. */
+        public final List<String> estados;
 
-        private ResultadoBusqueda(boolean exito, String secuencia, int nodos, long ms, String motivo) {
+        private ResultadoBusqueda(boolean exito, String secuencia, int nodos, long ms, String motivo,
+                                  List<String> estados) {
             this.exito = exito;
             this.secuencia = secuencia;
             this.longitud = secuencia.length();
             this.nodosExpandidos = nodos;
             this.tiempoMs = ms;
             this.motivoFalla = motivo;
+            this.estados = estados;
         }
 
-        static ResultadoBusqueda exito(String secuencia, int nodos, long ms) {
-            return new ResultadoBusqueda(true, secuencia, nodos, ms, null);
+        static ResultadoBusqueda exito(String secuencia, int nodos, long ms, List<String> estados) {
+            return new ResultadoBusqueda(true, secuencia, nodos, ms, null, estados);
         }
 
         static ResultadoBusqueda falla(String motivo, int nodos, long ms) {
-            return new ResultadoBusqueda(false, "", nodos, ms, motivo);
+            return new ResultadoBusqueda(false, "", nodos, ms, motivo, new ArrayList<>());
         }
 
         /** Formato acordado del INFORM a la GUI: secuencia;longitud;nodos;tiempoMs */
         public String aInform() {
             return secuencia + ";" + longitud + ";" + nodosExpandidos + ";" + tiempoMs;
+        }
+
+        /**
+         * Variante de 5 campos con los estados del camino: secuencia;longitud;nodos;tiempoMs;estados
+         * (estados separados por coma). NO se usa todavía: el contrato con la GUI sigue siendo
+         * el de 4 campos hasta que el equipo lo acuerde (ver seccion 3 del documento).
+         */
+        public String aInformConEstados() {
+            return aInform() + ";" + String.join(",", estados);
         }
 
         @Override
@@ -638,6 +750,14 @@ public class BusquedaConGenerador {
             StringBuilder sb = new StringBuilder();
             for (Nodo n = this; n.padre != null; n = n.padre) sb.append(n.movimiento);
             return sb.reverse().toString();
+        }
+
+        /** Los estados del camino, del inicial (raíz) a este nodo. Uno más que movimientos. */
+        List<String> caminoEstados() {
+            List<String> lista = new ArrayList<>();
+            for (Nodo n = this; n != null; n = n.padre) lista.add(n.estado);
+            Collections.reverse(lista);
+            return lista;
         }
     }
 
@@ -701,7 +821,7 @@ public class BusquedaConGenerador {
         actual = frontera.poll();
         expandidos++;
         if (actual.estado.equals(META)) {
-            return terminar(ResultadoBusqueda.exito(actual.camino(), expandidos, ms()));
+            return terminar(ResultadoBusqueda.exito(actual.camino(), expandidos, ms(), actual.caminoEstados()));
         }
         if (expandidos >= limiteNodos) {
             return terminar(ResultadoBusqueda.falla(ResultadoBusqueda.FALLA_LIMITE, expandidos, ms()));
@@ -799,28 +919,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * Lanzador para probar los jugadores con JADE.  Argumentos:  <modo> [agentes...]
- *
- *   local                  contenedor principal + jugadores + generador (mock) + despliegue (mock). Todo en tu PC.
- *   principal              contenedor principal en tu PC; los demás se conectan a ti. Por defecto: los 3 jugadores.
- *   <IP del principal>     contenedor que se une al principal de otra PC. Por defecto: los 3 jugadores.
- *
- *   [agentes]  opcional, cuáles iniciar: jugador1  jugador2  jugador3  jugadores  generador  despliegue
- *              "jugadores" = los tres de golpe.
- *              (generador y despliegue son MOCKS: no los inicies si ya existen los reales en otra PC)
- *
- * Opciones de la JVM (-D):  -Destado=182043765   -DmiIp=192.168.1.20   -DsinGui=true
- *   -Djugador=jugador1  a quién le manda el reto el despliegue mock (default jugador3).
- *                       Varios separados por coma: -Djugador=jugador1,jugador2,jugador3
- *   -DpuertoLocal=1100  (solo si dos contenedores corren en la MISMA PC; cada uno necesita un puerto distinto)
- *
- * Ejemplos:
- *   local jugador1 generador despliegue        -Djugador=jugador1
- *   local jugadores generador despliegue       -Djugador=jugador1,jugador2,jugador3
- *   principal jugador1 jugador2                (el generador y la GUI reales viven en otras PCs)
- *   192.168.1.10 jugador1 jugador2             (me uno al principal de otra PC)
- */
 public class PruebaJade {
 
     /** nombre del agente -> clase que lo implementa. El orden importa: jugadores y generador antes del despliegue. */
@@ -830,6 +928,7 @@ public class PruebaJade {
             {"jugador3",   "puzzle.agentes.AgenteJugador3"},
             {"generador",  "puzzle.pruebas.AgenteGeneradorMock"},
             {"despliegue", "puzzle.pruebas.AgenteDespliegueMock"},
+            {"sonda",      "puzzle.pruebas.SondaGenerador"},        // diagnóstico, va al final
     };
 
     public static void main(String[] args) throws Exception {
@@ -868,7 +967,7 @@ public class PruebaJade {
         for (String nombre : pedidos) {
             if (!conocido(nombre)) {
                 System.out.println("PruebaJade: AVISO, no conozco el agente '" + nombre + "'. Opciones: "
-                        + "jugador1 jugador2 jugador3 jugadores generador despliegue");
+                        + "jugador1 jugador2 jugador3 jugadores generador despliegue sonda");
             }
         }
         if (creados == 0) {
@@ -1198,6 +1297,404 @@ public class PruebaJugadores12 {
         StringBuilder sb = new StringBuilder();
         for (char c : l) sb.append(c);
         return sb.toString();
+    }
+}
+```
+
+### `src/puzzle/pruebas/SondaGenerador.java`
+
+```java
+package puzzle.pruebas;
+
+import jade.core.AID;
+import jade.core.Agent;
+import jade.core.behaviours.CyclicBehaviour;
+import jade.domain.AMSService;
+import jade.domain.FIPAAgentManagement.AMSAgentDescription;
+import jade.domain.FIPAAgentManagement.SearchConstraints;
+import jade.lang.acl.ACLMessage;
+import puzzle.busqueda.BusquedaConGenerador;
+import puzzle.busqueda.BusquedaConGenerador.Hijo;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * HERRAMIENTA DE DIAGNÓSTICO (no es parte del sistema).
+ *
+ * Sirve para averiguar por qué un jugador no logra hablar con el Agente Generador real.
+ *   1. Pregunta al AMS qué agentes hay en la plataforma, con sus nombres locales exactos.
+ *   2. Le manda al generador un REQUEST por cada formato de contenido plausible y vuelca TODO
+ *      lo que contesta: performativa, remitente, conversation-id, ontología, protocolo, lenguaje
+ *      y contenido en crudo. Luego lo interpreta con el mismo parser del jugador.
+ *   3. Al final dice qué formato (si alguno) produjo hijos utilizables.
+ *
+ * Opciones (-D):  -Dgenerador=nombre   (default "generador")
+ *                 -Destado=182043765
+ *                 -DesperaMs=8000      cuánto esperar cada respuesta
+ *                 -DunSoloFormato=true solo prueba el formato acordado por el equipo
+ */
+public class SondaGenerador extends Agent {
+
+    private final String generador = System.getProperty("generador", "generador");
+    private final String estado = System.getProperty("estado", "182043765");
+    private final long esperaMs = Long.getLong("esperaMs", 8_000L);
+    private final boolean unSoloFormato = Boolean.getBoolean("unSoloFormato");
+
+    /** etiqueta -> contenido a enviar. El primero es el formato acordado en el documento. */
+    private final Map<String, String> variantes = new LinkedHashMap<>();
+    private final List<String> etiquetas = new ArrayList<>();
+    private final Map<String, String> veredicto = new LinkedHashMap<>();
+
+    private int indice = 0;
+    private long vencimiento;
+    private boolean respondio;
+
+    @Override
+    protected void setup() {
+        armarVariantes();
+        listarAgentes();
+
+        addBehaviour(new CyclicBehaviour(this) {
+            @Override
+            public void action() {
+                if (vencimiento == 0) { enviar(); return; }
+
+                ACLMessage m = myAgent.receive();          // SIN plantilla: cae todo
+                if (m == null) {
+                    long falta = vencimiento - System.currentTimeMillis();
+                    if (falta > 0) { block(falta); return; }
+                    if (!respondio) {
+                        System.out.println("  >> NADIE CONTESTÓ en " + esperaMs + " ms.");
+                        veredicto.put(etiquetas.get(indice - 1), "sin respuesta");
+                    }
+                    siguiente();
+                    return;
+                }
+                respondio = true;
+                volcar(m);
+                vencimiento = System.currentTimeMillis() + 1500;   // margen por si manda varios
+            }
+        });
+    }
+
+    private void armarVariantes() {
+        variantes.put("acordado (9 chars)", estado);
+        if (!unSoloFormato) {
+            StringBuilder comas = new StringBuilder(), espacios = new StringBuilder();
+            for (int i = 0; i < estado.length(); i++) {
+                if (i > 0) { comas.append(','); espacios.append(' '); }
+                comas.append(estado.charAt(i));
+                espacios.append(estado.charAt(i));
+            }
+            variantes.put("digitos con coma", comas.toString());
+            variantes.put("digitos con espacio", espacios.toString());
+            variantes.put("filas con coma", estado.substring(0, 3) + "," + estado.substring(3, 6) + "," + estado.substring(6));
+            variantes.put("filas con salto", estado.substring(0, 3) + "\n" + estado.substring(3, 6) + "\n" + estado.substring(6));
+            variantes.put("arreglo JSON", "[" + comas + "]");
+            variantes.put("objeto JSON", "{\"estado\":\"" + estado + "\"}");
+        }
+        etiquetas.addAll(variantes.keySet());
+    }
+
+    private void enviar() {
+        if (indice >= etiquetas.size()) { resumen(); doDelete(); return; }
+        String etiqueta = etiquetas.get(indice);
+        String contenido = variantes.get(etiqueta);
+
+        ACLMessage req = new ACLMessage(ACLMessage.REQUEST);
+        req.addReceiver(new AID(generador, AID.ISLOCALNAME));
+        req.setConversationId("sonda-" + (indice + 1));
+        req.setContent(contenido);
+        send(req);
+
+        respondio = false;
+        vencimiento = System.currentTimeMillis() + esperaMs;
+        indice++;
+        System.out.println("\n--- SONDA " + indice + "/" + etiquetas.size() + ": formato \"" + etiqueta + "\" ---");
+        System.out.println("  REQUEST a '" + generador + "', conv-id sonda-" + indice);
+        System.out.println("  content enviado: [" + contenido.replace("\n", "\\n") + "]");
+    }
+
+    private void siguiente() {
+        vencimiento = 0;
+        enviar();
+    }
+
+    /** Pregunta al AMS la lista completa de agentes. Sin setMaxResults(-1) el AMS devuelve solo 1. */
+    private void listarAgentes() {
+        System.out.println("\n=== SONDA: agentes en la plataforma segun el AMS ===");
+        try {
+            SearchConstraints todos = new SearchConstraints();
+            todos.setMaxResults(-1L);
+            AMSAgentDescription[] agentes = AMSService.search(this, new AMSAgentDescription(), todos);
+            for (AMSAgentDescription d : agentes) {
+                AID aid = d.getName();
+                System.out.printf("  %-18s  %s%n", aid.getLocalName(), aid.getName());
+            }
+            System.out.println("  (" + agentes.length + " agentes; el nombre local de la izquierda va en AID.ISLOCALNAME)");
+        } catch (Exception e) {
+            System.out.println("  no se pudo consultar el AMS: " + e);
+        }
+    }
+
+    /** Imprime todos los campos del mensaje y lo que el parser del jugador entendería. */
+    private void volcar(ACLMessage m) {
+        String etiqueta = etiquetas.get(indice - 1);
+        System.out.println("  RESPUESTA:");
+        System.out.println("    performativa  : " + ACLMessage.getPerformative(m.getPerformative())
+                + " (" + m.getPerformative() + ")");
+        System.out.println("    remitente     : " + (m.getSender() == null ? "null" : m.getSender().getLocalName()));
+        System.out.println("    conversation  : " + m.getConversationId()
+                + (("sonda-" + indice).equals(m.getConversationId()) ? "   <- lo copió bien" : "   <- NO copió el conversation-id"));
+        System.out.println("    in-reply-to   : " + m.getInReplyTo());
+        System.out.println("    ontologia     : " + m.getOntology());
+        System.out.println("    protocolo     : " + m.getProtocol());
+        System.out.println("    lenguaje      : " + m.getLanguage());
+        String c = m.getContent();
+        System.out.println("    content crudo : [" + (c == null ? "null" : c.replace("\n", "\\n")) + "]"
+                + (c == null || c.isEmpty() ? "   <- VACÍO" : "   (" + c.length() + " chars)"));
+
+        if (m.getPerformative() != ACLMessage.INFORM) {
+            System.out.println("    >> El jugador trataría esto como FALLA 'generador-error':"
+                    + " Agentejugador solo acepta INFORM como entrega de hijos.");
+            veredicto.put(etiqueta, "respondió " + ACLMessage.getPerformative(m.getPerformative()) + ", no INFORM");
+            return;
+        }
+
+        List<Hijo> hijos = BusquedaConGenerador.parsearHijos(c);
+        int validos = 0;
+        for (Hijo h : hijos) if (BusquedaConGenerador.esValido(h.estado)) validos++;
+        System.out.println("    >> parsearHijos() entendió " + hijos.size() + " hijo(s), " + validos + " válido(s)");
+        for (Hijo h : hijos) {
+            System.out.printf("       mov='%c'  estado='%s'  %s%n", h.movimiento, h.estado,
+                    BusquedaConGenerador.esValido(h.estado) ? "valido" : "INVALIDO (se descarta)");
+        }
+        veredicto.put(etiqueta, validos > 0 ? "OK: " + validos + " hijos utilizables"
+                : "INFORM pero 0 hijos utilizables");
+    }
+
+    private void resumen() {
+        System.out.println("\n=== SONDA: resumen ===");
+        for (Map.Entry<String, String> e : veredicto.entrySet()) {
+            System.out.printf("  %-22s %s%n", e.getKey(), e.getValue());
+        }
+        boolean alguno = veredicto.values().stream().anyMatch(v -> v.startsWith("OK"));
+        System.out.println();
+        if (alguno) {
+            System.out.println("  Hay al menos un formato que funciona: usar ese con el Integrante 1.");
+        } else {
+            System.out.println("  Ningún formato produjo hijos. Qué pedirle al Integrante 1:");
+            System.out.println("   - que al recibir REQUEST con content=\"182043765\" responda");
+            System.out.println("     INFORM con content=\"U:812403765,D:182743065,R:182403765\"");
+            System.out.println("     (movimiento:estado separados por coma; el movimiento es del HUECO)");
+            System.out.println("   - o, si prefiere, solo los estados: \"812403765,182743065,182403765\"");
+            System.out.println("   - que use msg.createReply() para que el conversation-id vuelva igual");
+        }
+    }
+}
+```
+
+### `src/puzzle/gui/VentanaJugador.java`
+
+```java
+package puzzle.gui;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ventana paso a paso de UN jugador: dibuja el tablero en cada estado del camino encontrado.
+ *
+ * Es un visor LOCAL para la demo, independiente de la GUI del equipo (Agente de Despliegue,
+ * Integrante 4): no manda ni recibe mensajes, solo muestra lo que el jugador ya resolvió.
+ *
+ * Uso desde el agente:
+ *     VentanaJugador.mostrar("Agente 1 (Hamming)", historialPasoAPaso);
+ *
+ * Se puede apagar con -DsinVentana=true (útil al correr sin pantalla o en pruebas por consola).
+ */
+public class VentanaJugador {
+
+    private static final boolean DESACTIVADA = Boolean.getBoolean("sinVentana");
+    /** ms entre pasos en modo automático */
+    private static final int RETARDO_AUTO_MS = Integer.getInteger("retardoVentanaMs", 500);
+
+    /** Una ventana por título, para que un segundo reto reutilice la misma en vez de abrir otra. */
+    private static final java.util.Map<String, VentanaJugador> ABIERTAS = new java.util.HashMap<>();
+
+    private final JFrame marco;
+    private final JLabel[] casillas = new JLabel[9];
+    private final JLabel etiquetaPaso = new JLabel();
+    private final JLabel etiquetaResumen = new JLabel();
+    private final JSlider barra = new JSlider();
+    private final JButton botonAuto = new JButton("Reproducir");
+    private final Timer temporizador;
+
+    private List<String> estados = new ArrayList<>();
+    private int paso = 0;
+
+    /**
+     * Abre (o actualiza) la ventana del jugador y muestra el recorrido.
+     * Seguro de llamar desde el hilo del agente: salta a Swing por su cuenta.
+     *
+     * @param titulo  nombre a mostrar, p. ej. "Agente 1 (Hamming)"
+     * @param estados estados del camino, del inicial a la meta
+     */
+    public static void mostrar(String titulo, List<String> estados) {
+        mostrar(titulo, estados, null);
+    }
+
+    /** Igual, con una línea extra de métricas debajo del tablero. */
+    public static void mostrar(String titulo, List<String> estados, String resumen) {
+        if (DESACTIVADA) return;
+        if (estados == null || estados.isEmpty()) {
+            System.out.println("VentanaJugador: nada que mostrar para " + titulo + " (lista de estados vacía)");
+            return;
+        }
+        if (GraphicsEnvironment.isHeadless()) {
+            System.out.println("VentanaJugador: sin pantalla disponible, no abro ventana para " + titulo);
+            return;
+        }
+        // copia defensiva: la lista viene del agente, que sigue trabajando
+        final List<String> copia = new ArrayList<>(estados);
+        SwingUtilities.invokeLater(() -> {
+            VentanaJugador v = ABIERTAS.get(titulo);
+            if (v == null) {
+                v = new VentanaJugador(titulo);
+                ABIERTAS.put(titulo, v);
+            }
+            v.cargar(copia, resumen);
+        });
+    }
+
+    private VentanaJugador(String titulo) {
+        marco = new JFrame(titulo);
+        marco.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);   // cerrar la ventana NO mata al agente
+        marco.setLayout(new BorderLayout(8, 8));
+
+        JLabel cabecera = new JLabel(titulo, SwingConstants.CENTER);
+        cabecera.setFont(cabecera.getFont().deriveFont(Font.BOLD, 16f));
+        cabecera.setBorder(BorderFactory.createEmptyBorder(10, 10, 0, 10));
+        marco.add(cabecera, BorderLayout.NORTH);
+
+        JPanel tablero = new JPanel(new GridLayout(3, 3, 4, 4));
+        tablero.setBorder(BorderFactory.createEmptyBorder(10, 14, 6, 14));
+        // sin esto, si el gestor de ventanas achica el marco, BorderLayout.CENTER cede
+        // todo el recorte y las casillas quedan de 12 px de alto
+        tablero.setMinimumSize(new Dimension(228, 216));
+        for (int i = 0; i < 9; i++) {
+            casillas[i] = new JLabel("", SwingConstants.CENTER);
+            casillas[i].setPreferredSize(new Dimension(64, 64));
+            casillas[i].setFont(casillas[i].getFont().deriveFont(Font.BOLD, 28f));
+            casillas[i].setOpaque(true);
+            casillas[i].setBorder(BorderFactory.createLineBorder(new Color(120, 120, 120)));
+            tablero.add(casillas[i]);
+        }
+        marco.add(tablero, BorderLayout.CENTER);
+
+        // BoxLayout y no GridLayout: GridLayout reparte filas IGUALES y se queda con mucho
+        // mas alto del necesario, que BorderLayout le resta al tablero.
+        JPanel abajo = new JPanel();
+        abajo.setLayout(new BoxLayout(abajo, BoxLayout.Y_AXIS));
+        abajo.setBorder(BorderFactory.createEmptyBorder(0, 14, 10, 14));
+
+        etiquetaPaso.setAlignmentX(Component.CENTER_ALIGNMENT);
+        etiquetaResumen.setAlignmentX(Component.CENTER_ALIGNMENT);
+        etiquetaResumen.setFont(etiquetaResumen.getFont().deriveFont(Font.PLAIN, 11f));
+        abajo.add(etiquetaPaso);
+        abajo.add(Box.createVerticalStrut(2));
+        abajo.add(etiquetaResumen);
+        abajo.add(Box.createVerticalStrut(6));
+
+        barra.setMinimum(0);
+        barra.setAlignmentX(Component.CENTER_ALIGNMENT);
+        barra.addChangeListener(e -> {
+            if (barra.getValue() != paso) { paso = barra.getValue(); pintar(); }
+        });
+        abajo.add(barra);
+
+        JButton anterior = new JButton("< Anterior");
+        JButton siguiente = new JButton("Siguiente >");
+        JButton reinicio = new JButton("Reiniciar");
+        anterior.addActionListener(e -> irA(paso - 1));
+        siguiente.addActionListener(e -> irA(paso + 1));
+        reinicio.addActionListener(e -> { detener(); irA(0); });
+        botonAuto.addActionListener(e -> alternarAuto());
+
+        JPanel botones = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+        botones.setAlignmentX(Component.CENTER_ALIGNMENT);
+        botones.add(anterior);
+        botones.add(botonAuto);
+        botones.add(siguiente);
+        botones.add(reinicio);
+        abajo.add(Box.createVerticalStrut(6));
+        abajo.add(botones);
+
+        marco.add(abajo, BorderLayout.SOUTH);
+
+        temporizador = new Timer(RETARDO_AUTO_MS, e -> {
+            if (paso + 1 < estados.size()) irA(paso + 1);
+            else detener();
+        });
+    }
+
+    private void cargar(List<String> nuevos, String resumen) {
+        detener();
+        estados = nuevos;
+        paso = 0;
+        barra.setMaximum(estados.size() - 1);
+        barra.setValue(0);
+        etiquetaResumen.setText(resumen == null ? " " : resumen);
+        pintar();
+        if (!marco.isVisible()) {
+            marco.pack();
+            // el gestor de ventanas puede imponer su propia geometria y dejar el marco mas
+            // bajo de lo que pide pack(); con el minimo fijado ya no puede aplastar el tablero
+            marco.setMinimumSize(marco.getSize());
+            marco.setLocationByPlatform(true);
+            marco.setVisible(true);
+        }
+        marco.toFront();
+    }
+
+    private void irA(int destino) {
+        if (destino < 0 || destino >= estados.size()) return;
+        paso = destino;
+        barra.setValue(destino);
+        pintar();
+    }
+
+    private void alternarAuto() {
+        if (temporizador.isRunning()) { detener(); return; }
+        if (paso == estados.size() - 1) irA(0);
+        temporizador.start();
+        botonAuto.setText("Pausa");
+    }
+
+    private void detener() {
+        temporizador.stop();
+        botonAuto.setText("Reproducir");
+    }
+
+    /** Dibuja el estado actual; resalta en verde las fichas ya colocadas en su lugar de la meta. */
+    private void pintar() {
+        String estado = estados.get(paso);
+        for (int i = 0; i < 9; i++) {
+            char ficha = estado.charAt(i);
+            boolean hueco = ficha == '0';
+            boolean enSuLugar = !hueco && ficha == "123456780".charAt(i);
+            casillas[i].setText(hueco ? "" : String.valueOf(ficha));
+            casillas[i].setBackground(hueco ? new Color(238, 238, 238)
+                    : enSuLugar ? new Color(168, 214, 168) : new Color(252, 226, 170));
+            casillas[i].setForeground(new Color(30, 30, 30));
+        }
+        etiquetaPaso.setText("Paso " + paso + " de " + (estados.size() - 1)
+                + (paso == 0 ? "  (inicial)" : paso == estados.size() - 1 ? "  (meta)" : ""));
     }
 }
 ```
