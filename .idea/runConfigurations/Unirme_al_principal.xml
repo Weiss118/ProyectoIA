@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Unirme al principal" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="puzzle.pruebas.PruebaJade" />
+    <module name="8puzzle-jade" />
+    <option name="PROGRAM_PARAMETERS" value="IP_DEL_PRINCIPAL jugador1 jugador2" />
+    <option name="VM_PARAMETERS" value="-DmiIp=CAMBIA_POR_MI_IP" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

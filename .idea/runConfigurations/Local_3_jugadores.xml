@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Local 3 jugadores" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="puzzle.pruebas.PruebaJade" />
+    <module name="8puzzle-jade" />
+    <option name="PROGRAM_PARAMETERS" value="local jugadores generador despliegue" />
+    <option name="VM_PARAMETERS" value="-Djugador=jugador1,jugador2,jugador3 -Destado=182043765" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
