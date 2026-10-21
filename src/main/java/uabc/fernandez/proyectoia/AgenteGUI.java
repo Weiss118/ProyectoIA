@@ -17,9 +17,8 @@ public class AgenteGUI extends Agente {
     private String[] estadosJugadores;
     private int jugadorActual = 0;
 
-    // Nombre de los agentes en la red JADE
-    private final String NOMBRE_GENERADOR = "agenteGenerador";
-    private final String[] NOMBRES_JUGADORES = {"agente1", "agente2", "agente3"};
+    private final String NOMBRE_GENERADOR = "generador";
+    private final String[] NOMBRES_JUGADORES = {"jugador1", "jugador2", "jugador3"};
 
     public AgenteGUI() {
         this.estadoTableroInicial = generarEstadoAleatorio();
@@ -34,14 +33,21 @@ public class AgenteGUI extends Agente {
     protected void setup() {
         super.setup();
 
-        // Comportamiento cíclico de JADE para escuchar percepciones
+        // Obtener la referencia de GUIApp pasada como argumento desde JADE
+        Object[] args = getArguments();
+        if (args != null && args.length > 0 && args[0] instanceof GUIApp) {
+            this.guiApp = (GUIApp) args[0];
+            this.guiApp.setAgente(this); // Vincula este agente de JADE con la UI de JavaFX
+            System.out.println("[AgenteGUI] Vinculado exitosamente con la interfaz JavaFX.");
+        }
+
         addBehaviour(new CyclicBehaviour(this) {
             @Override
             public void action() {
                 percepcion();
                 razonamiento();
                 actuar();
-                block(500); // Revisa mensajes cada 500ms
+                block(500);
             }
         });
     }
@@ -51,7 +57,7 @@ public class AgenteGUI extends Agente {
     }
 
     // =========================================================================
-    // 1. ÁREA DE PERCEPCIÓN: Recepción de mensajes FIPA-ACL
+    // 1. ÁREA DE PERCEPCIÓN: Recepción de respuestas de Pasos y Jugadores
     // =========================================================================
     @Override
     public void percepcion() {
@@ -62,17 +68,17 @@ public class AgenteGUI extends Agente {
             String contenido = msg.getContent();
             String emisor = msg.getSender().getLocalName();
 
-            System.out.println("Mensaje recibido de [" + emisor + "]: " + contenido);
+            System.out.println("[AgenteGUI] Mensaje INFORM recibido de [" + emisor + "]: " + contenido);
 
             if (contenido != null) {
-                // Caso A: El AgenteGenerador envía el tablero inicial (cadena de 9 dígitos)
+                // Caso A: El AgenteGenerador (Pasos) envía el tablero inicial (cadena de 9 dígitos)
                 if (contenido.length() == 9 && contenido.matches("[0-8]+")) {
                     this.estadoTableroInicial = contenido;
                     if (guiApp != null) {
                         Platform.runLater(() -> guiApp.actualizarTableroInicialEnUI(contenido));
                     }
                 }
-                // Caso B: Un AgenteJugador envía sus métricas con el formato "secuencia;longitud;nodos;tiempoMs"
+                // Caso B: Un AgenteJugador envía sus métricas ("secuencia;longitud;nodos;tiempoMs")
                 else if (contenido.contains(";")) {
                     procesarResultadoJugador(emisor, contenido);
                 }
@@ -81,41 +87,33 @@ public class AgenteGUI extends Agente {
     }
 
     // =========================================================================
-    // 2. PETICIONES A OTROS AGENTES (FIPA-ACL)
+    // 2. PETICIONES A OTROS AGENTES
     // =========================================================================
-
-    /**
-     * Envía un REQUEST a Pasos (AgenteGenerador) para pedir un nuevo tablero inicial.
-     */
     public void pedirTableroAGenerador() {
         ACLMessage request = new ACLMessage(ACLMessage.REQUEST);
         request.addReceiver(new AID(NOMBRE_GENERADOR, AID.ISLOCALNAME));
-        request.setContent("GENERAR_TABLERO");
+        request.setContent("GENERAR_RETO");
         send(request);
-        System.out.println(" Petición enviada a " + NOMBRE_GENERADOR + ": GENERAR_TABLERO");
+        System.out.println("[AgenteGUI] REQUEST enviado a [" + NOMBRE_GENERADOR + "]: GENERAR_RETO");
     }
 
-    /**
-     * Envía el tablero aceptado a los agentes jugadores para que inicien la resolución.
-     */
     public void iniciarJuegoConJugadores() {
         ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
         for (String nombreJugador : NOMBRES_JUGADORES) {
             msg.addReceiver(new AID(nombreJugador, AID.ISLOCALNAME));
         }
-        msg.setContent("RESOLVER:" + estadoTableroInicial);
+        msg.setContent(estadoTableroInicial);
         send(msg);
-        System.out.println(" Tablero " + estadoTableroInicial + " enviado a los agentes jugadores.");
+        System.out.println("[AgenteGUI] RESOLVER enviado a jugadores con tablero: " + estadoTableroInicial);
     }
 
     // =========================================================================
-    // 3. PROCESAMIENTO DE RESULTADOS Y METRICAS
+    // 3. PROCESAMIENTO DE RESULTADOS Y MÉTRICAS
     // =========================================================================
     private void procesarResultadoJugador(String emisor, String contenido) {
         try {
             String[] partes = contenido.split(";");
             if (partes.length >= 4) {
-                String secuencia = partes[0];
                 int longitud = Integer.parseInt(partes[1]);
                 int nodos = Integer.parseInt(partes[2]);
                 long tiempoMs = Long.parseLong(partes[3]);
@@ -129,58 +127,36 @@ public class AgenteGUI extends Agente {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error procesando métricas del jugador " + emisor + ": " + e.getMessage());
+            System.err.println("[AgenteGUI] Error procesando métricas del jugador [" + emisor + "]: " + e.getMessage());
         }
     }
 
     private int obtenerIndiceAgente(String emisor) {
-        if (emisor.equalsIgnoreCase("agente1")) return 0;
-        if (emisor.equalsIgnoreCase("agente2")) return 1;
-        if (emisor.equalsIgnoreCase("agente3")) return 2;
+        if (emisor.equalsIgnoreCase("jugador1") || emisor.equalsIgnoreCase("agente1")) return 0;
+        if (emisor.equalsIgnoreCase("jugador2") || emisor.equalsIgnoreCase("agente2")) return 1;
+        if (emisor.equalsIgnoreCase("jugador3") || emisor.equalsIgnoreCase("agente3")) return 2;
         return -1;
     }
 
-    @Override
-    public void razonamiento() { }
+    @Override public void razonamiento() { }
+    @Override public void actuar() { }
 
-    @Override
-    public void actuar() { }
-
-    // Generador auxiliar de cadenas de 9 dígitos (0 al 8)
     public String generarEstadoAleatorio() {
         List<Character> fichas = new ArrayList<>();
-        for (char c = '0'; c <= '8'; c++) {
-            fichas.add(c);
-        }
+        for (char c = '0'; c <= '8'; c++) fichas.add(c);
         Collections.shuffle(fichas);
         StringBuilder sb = new StringBuilder();
-        for (char c : fichas) {
-            sb.append(c);
-        }
+        for (char c : fichas) sb.append(c);
         return sb.toString();
     }
 
-    // Getters y Setters
     public String getEstadoTableroInicial() {
-        if (estadoTableroInicial == null) {
-            estadoTableroInicial = generarEstadoAleatorio();
-        }
+        if (estadoTableroInicial == null) estadoTableroInicial = generarEstadoAleatorio();
         return estadoTableroInicial;
     }
 
-    public void setEstadoTableroInicial(String nuevo) {
-        this.estadoTableroInicial = nuevo;
-    }
-
-    public String[] getEstadosJugadores() {
-        return estadosJugadores;
-    }
-
-    public int getJugadorActual() {
-        return jugadorActual;
-    }
-
-    public void setJugadorActual(int idx) {
-        this.jugadorActual = idx;
-    }
+    public void setEstadoTableroInicial(String nuevo) { this.estadoTableroInicial = nuevo; }
+    public String[] getEstadosJugadores() { return estadosJugadores; }
+    public int getJugadorActual() { return jugadorActual; }
+    public void setJugadorActual(int idx) { this.jugadorActual = idx; }
 }

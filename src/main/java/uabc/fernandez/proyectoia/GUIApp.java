@@ -13,15 +13,11 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class GUIApp extends Application {
 
     private Stage primaryStage;
     private AgenteGUI agente;
-
-    private final List<Stage> ventanasJugadores = new ArrayList<>();
+    private jade.wrapper.AgentContainer mainContainer;
 
     private final String[] nombresAgentes = {
             "Agente 1 (Hamming)",
@@ -34,8 +30,6 @@ public class GUIApp extends Application {
     private ObservableList<MetricaAgente> datosMetricas;
 
     private GridPane gridTableroMenu;
-
-    // Ruta por defecto para los efectos de sonido de BotonFlotante
     private final String RUTA_SONIDO = "click.wav";
 
     @Override
@@ -43,20 +37,54 @@ public class GUIApp extends Application {
         this.primaryStage = stage;
         this.primaryStage.setTitle("8-Puzzle - Dashboard Principal (Agente GUI)");
 
-        this.agente = new AgenteGUI();
-        this.agente.setGuiApp(this);
+        iniciarJADE();
 
         mostrarPantallaMenu();
         primaryStage.setMaximized(true);
         primaryStage.show();
     }
 
+    private void iniciarJADE() {
+        try {
+            jade.core.Runtime rt = jade.core.Runtime.instance();
+            jade.core.Profile profile = new jade.core.ProfileImpl();
+
+            profile.setParameter(jade.core.Profile.MAIN_HOST, "10.21.59.160");
+            profile.setParameter(jade.core.Profile.LOCAL_HOST, "10.21.59.160");
+            profile.setParameter(jade.core.Profile.MAIN_PORT, "1099");
+            profile.setParameter(jade.core.Profile.GUI, "true");
+
+            mainContainer = rt.createMainContainer(profile);
+
+            if (mainContainer != null) {
+                Object[] args = new Object[]{ this };
+
+                jade.wrapper.AgentController agentController = mainContainer.createNewAgent(
+                        "agenteGUI",
+                        "uabc.fernandez.proyectoia.AgenteGUI",
+                        args
+                );
+                agentController.start();
+                System.out.println("Servidor JADE iniciado y AgenteGUI registrado.");
+            }
+        } catch (Exception e) {
+            System.err.println("Error iniciando JADE: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void stop() throws Exception {
+        if (mainContainer != null) {
+            mainContainer.kill();
+        }
+        super.stop();
+    }
+
     // =========================================================================
-    // 1. PANTALLA MENÚ (Con BotonFlotante)
+    // 1. PANTALLA MENÚ
     // =========================================================================
     public void mostrarPantallaMenu() {
-        cerrarVentanasJugadores();
-
         VBox root = new VBox(25);
         root.setAlignment(Pos.CENTER);
         root.setStyle("-fx-background-color: #F4F4F9; -fx-padding: 40;");
@@ -75,7 +103,6 @@ public class GUIApp extends Application {
         gridTableroMenu = crearGridTablero(agente.getEstadoTableroInicial(), 90);
         boxTablero.getChildren().addAll(lblTableroTitulo, gridTableroMenu);
 
-        // --- Botones Flotantes del Menú ---
         BotonFlotante btnGenerar = new BotonFlotante("Generar nuevo tablero", "#3F51B5", RUTA_SONIDO);
         BotonFlotante btnComenzar = new BotonFlotante("Comenzar juego", "#2E7D32", RUTA_SONIDO);
         BotonFlotante btnSalir = new BotonFlotante("Salir", "#C62828", RUTA_SONIDO);
@@ -84,22 +111,19 @@ public class GUIApp extends Application {
         btnComenzar.setMinWidth(380);
         btnSalir.setMinWidth(380);
 
-        // Evento Generar: Pide el tablero al AgenteGenerador (Pasos)
         btnGenerar.setOnAction(e -> {
             try {
                 agente.pedirTableroAGenerador();
             } catch (Exception ex) {
-                // Fallback local si el contenedor de JADE no está en red aún
                 agente.setEstadoTableroInicial(agente.generarEstadoAleatorio());
                 actualizarTableroInicialEnUI(agente.getEstadoTableroInicial());
             }
         });
 
-        // Evento Comenzar: Inicia la resolución y despliega los paneles
+        // Al comenzar, le enviamos la orden por JADE a tus compañeros y pasamos a tu Dashboard
         btnComenzar.setOnAction(e -> {
-            agente.iniciarJuegoConJugadores();
-            mostrarDashboardResultados();
-            desplegarVentanasJugadores();
+            agente.iniciarJuegoConJugadores(); // Envía "RESOLVER:tablero" por JADE
+            mostrarDashboardResultados();      // Muestra tu tabla de monitoreo
         });
 
         btnSalir.setOnAction(e -> primaryStage.close());
@@ -108,9 +132,6 @@ public class GUIApp extends Application {
         primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
-    /**
-     * Actualiza el tablero en la pantalla Menú cuando llega la respuesta de JADE.
-     */
     public void actualizarTableroInicialEnUI(String nuevoTablero) {
         agente.setEstadoTableroInicial(nuevoTablero);
         if (gridTableroMenu != null) {
@@ -120,7 +141,7 @@ public class GUIApp extends Application {
     }
 
     // =========================================================================
-    // 2. DASHBOARD PRINCIPAL
+    // 2. DASHBOARD PRINCIPAL (Monitoreo para el Host)
     // =========================================================================
     public void mostrarDashboardResultados() {
         VBox root = new VBox(35);
@@ -130,13 +151,11 @@ public class GUIApp extends Application {
         Label lblTitulo = new Label("Dashboard de Monitoreo Multiagente");
         lblTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 36));
 
-        // Banner del Agente Ganador
-        lblGanador = new Label("🏆 ¡GANADOR: Agente 2 (Manhattan) con 8 iteraciones!");
+        lblGanador = new Label("⏳ Esperando que los agentes resuelvan el tablero...");
         lblGanador.setFont(Font.font("Arial", FontWeight.BOLD, 22));
-        lblGanador.setTextFill(Color.web("#2E7D32"));
-        lblGanador.setStyle("-fx-background-color: #E8F5E9; -fx-border-color: #2E7D32; -fx-border-width: 2; -fx-padding: 15 30 15 30; -fx-border-radius: 8; -fx-background-radius: 8;");
+        lblGanador.setTextFill(Color.web("#1565C0"));
+        lblGanador.setStyle("-fx-background-color: #E3F2FD; -fx-border-color: #1565C0; -fx-border-width: 2; -fx-padding: 15 30 15 30; -fx-border-radius: 8; -fx-background-radius: 8;");
 
-        // Tabla Resumen
         tablaMetrics = new TableView<>();
         tablaMetrics.setStyle("-fx-font-size: 18px;");
         tablaMetrics.setMaxWidth(950);
@@ -158,14 +177,14 @@ public class GUIApp extends Application {
         tablaMetrics.getColumns().addAll(colAgente, colIter, colEstado);
         tablaMetrics.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
+        // Inicia en estado "Resolviendo..."
         datosMetricas = FXCollections.observableArrayList(
-                new MetricaAgente(nombresAgentes[0], "14 pasos", "Resuelto"),
-                new MetricaAgente(nombresAgentes[1], "8 pasos", "Resuelto (Ganador)"),
-                new MetricaAgente(nombresAgentes[2], "10 pasos", "Resuelto")
+                new MetricaAgente(nombresAgentes[0], "Procesando...", "En espera"),
+                new MetricaAgente(nombresAgentes[1], "Procesando...", "En espera"),
+                new MetricaAgente(nombresAgentes[2], "Procesando...", "En espera")
         );
         tablaMetrics.setItems(datosMetricas);
 
-        // --- Botones Flotantes del Dashboard ---
         BotonFlotante btnNuevoJuego = new BotonFlotante("Comenzar juego nuevo", "#3F51B5", RUTA_SONIDO);
         BotonFlotante btnSalirDashboard = new BotonFlotante("Salir / Cerrar Agente", "#C62828", RUTA_SONIDO);
 
@@ -173,10 +192,7 @@ public class GUIApp extends Application {
         btnSalirDashboard.setMinWidth(360);
 
         btnNuevoJuego.setOnAction(e -> mostrarPantallaMenu());
-        btnSalirDashboard.setOnAction(e -> {
-            cerrarVentanasJugadores();
-            primaryStage.close();
-        });
+        btnSalirDashboard.setOnAction(e -> primaryStage.close());
 
         HBox panelBotones = new HBox(30);
         panelBotones.setAlignment(Pos.CENTER);
@@ -186,14 +202,11 @@ public class GUIApp extends Application {
         primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
-    /**
-     * Actualiza la tabla de métricas en tiempo real al recibir la respuesta de un agente.
-     */
     public void actualizarResultadoJugador(int indexAgente, int pasos, int nodos, long tiempoMs) {
         if (datosMetricas != null && indexAgente >= 0 && indexAgente < datosMetricas.size()) {
             datosMetricas.set(indexAgente, new MetricaAgente(
                     nombresAgentes[indexAgente],
-                    pasos + " pasos (" + tiempoMs + " ms)",
+                    pasos + " pasos (" + tiempoMs + " ms, " + nodos + " nodos)",
                     "Resuelto"
             ));
             evaluarGanador();
@@ -201,7 +214,6 @@ public class GUIApp extends Application {
     }
 
     private void evaluarGanador() {
-        // Lógica para resaltar el menor número de pasos en el banner verde
         int minPasos = Integer.MAX_VALUE;
         int idxGanador = -1;
 
@@ -220,127 +232,11 @@ public class GUIApp extends Application {
 
         if (idxGanador != -1) {
             lblGanador.setText("🏆 ¡GANADOR: " + nombresAgentes[idxGanador] + " con " + minPasos + " iteraciones!");
+            lblGanador.setTextFill(Color.web("#2E7D32"));
+            lblGanador.setStyle("-fx-background-color: #E8F5E9; -fx-border-color: #2E7D32; -fx-border-width: 2; -fx-padding: 15 30 15 30; -fx-border-radius: 8; -fx-background-radius: 8;");
         }
     }
 
-    // =========================================================================
-    // 3. VENTANAS INDIVIDUALES DE AGENTES
-    // =========================================================================
-    private void desplegarVentanasJugadores() {
-        cerrarVentanasJugadores();
-
-        int[] totalPasosAgentes = {14, 8, 10};
-
-        for (int i = 0; i < 3; i++) {
-            final int idxAgente = i;
-            Stage playerStage = new Stage();
-            playerStage.setTitle("Agente Jugador - " + nombresAgentes[idxAgente]);
-
-            List<String> historialIteraciones = generarSecuenciaEjemplo(
-                    agente.getEstadoTableroInicial(),
-                    totalPasosAgentes[idxAgente]
-            );
-
-            final int[] iteracionActual = {0};
-
-            VBox root = new VBox(20);
-            root.setAlignment(Pos.CENTER);
-            root.setStyle("-fx-background-color: #FAFAFA; -fx-padding: 25;");
-
-            Label lblNombre = new Label(nombresAgentes[idxAgente]);
-            lblNombre.setFont(Font.font("Arial", FontWeight.BOLD, 22));
-            lblNombre.setTextFill(Color.web("#1A237E"));
-
-            Label lblIteracion = new Label("Iteración: 1 de " + historialIteraciones.size());
-            lblIteracion.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-            lblIteracion.setTextFill(Color.web("#424242"));
-
-            GridPane gridJugador = crearGridTablero(historialIteraciones.get(0), 110);
-
-            BotonFlotante btnAnterior = new BotonFlotante("◄ Regresar", "#3F51B5", RUTA_SONIDO);
-            BotonFlotante btnSiguiente = new BotonFlotante("Siguiente ►", "#3F51B5", RUTA_SONIDO);
-
-            btnAnterior.setMinWidth(220);
-            btnAnterior.setMinHeight(60);
-            btnSiguiente.setMinWidth(220);
-            btnSiguiente.setMinHeight(60);
-
-            btnAnterior.setOnAction(e -> {
-                if (iteracionActual[0] > 0) {
-                    iteracionActual[0]--;
-                    lblIteracion.setText("Iteración: " + (iteracionActual[0] + 1) + " de " + historialIteraciones.size());
-                    gridJugador.getChildren().clear();
-                    actualizarGridTablero(gridJugador, historialIteraciones.get(iteracionActual[0]), 110);
-                }
-            });
-
-            btnSiguiente.setOnAction(e -> {
-                if (iteracionActual[0] < historialIteraciones.size() - 1) {
-                    iteracionActual[0]++;
-                    lblIteracion.setText("Iteración: " + (iteracionActual[0] + 1) + " de " + historialIteraciones.size());
-                    gridJugador.getChildren().clear();
-                    actualizarGridTablero(gridJugador, historialIteraciones.get(iteracionActual[0]), 110);
-                }
-            });
-
-            HBox panelNavegacion = new HBox(20);
-            panelNavegacion.setAlignment(Pos.CENTER);
-            panelNavegacion.getChildren().addAll(btnAnterior, btnSiguiente);
-
-            root.getChildren().addAll(lblNombre, lblIteracion, gridJugador, panelNavegacion);
-
-            Scene scene = new Scene(root, 650, 720);
-            playerStage.setScene(scene);
-
-            playerStage.setX(60 + (i * 620));
-            playerStage.setY(150);
-
-            playerStage.show();
-            ventanasJugadores.add(playerStage);
-        }
-    }
-
-    private void cerrarVentanasJugadores() {
-        for (Stage stage : ventanasJugadores) {
-            stage.close();
-        }
-        ventanasJugadores.clear();
-    }
-
-    private List<String> generarSecuenciaEjemplo(String estadoInicial, int totalPasos) {
-        List<String> secuencia = new ArrayList<>();
-        secuencia.add(estadoInicial);
-
-        String actual = estadoInicial;
-        for (int step = 0; step < totalPasos; step++) {
-            actual = hacerMovimientoAleatorioSimulado(actual);
-            secuencia.add(actual);
-        }
-        return secuencia;
-    }
-
-    private String hacerMovimientoAleatorioSimulado(String estado) {
-        char[] array = estado.toCharArray();
-        int zeroIdx = estado.indexOf('0');
-        int row = zeroIdx / 3;
-        int col = zeroIdx % 3;
-
-        List<Integer> vecinos = new ArrayList<>();
-        if (row > 0) vecinos.add(zeroIdx - 3);
-        if (row < 2) vecinos.add(zeroIdx + 3);
-        if (col > 0) vecinos.add(zeroIdx - 1);
-        if (col < 2) vecinos.add(zeroIdx + 1);
-
-        int targetIdx = vecinos.get((int) (Math.random() * vecinos.size()));
-        array[zeroIdx] = array[targetIdx];
-        array[targetIdx] = '0';
-
-        return new String(array);
-    }
-
-    // =========================================================================
-    // MÉTODOS AUXILIARES
-    // =========================================================================
     private GridPane crearGridTablero(String estado, double tileSize) {
         GridPane grid = new GridPane();
         grid.setAlignment(Pos.CENTER);
@@ -348,6 +244,10 @@ public class GUIApp extends Application {
         grid.setVgap(8);
         actualizarGridTablero(grid, estado, tileSize);
         return grid;
+    }
+
+    public void setAgente(AgenteGUI agente) {
+        this.agente = agente;
     }
 
     private void actualizarGridTablero(GridPane grid, String estado, double tileSize) {
