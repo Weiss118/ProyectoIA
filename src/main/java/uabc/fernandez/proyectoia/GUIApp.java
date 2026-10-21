@@ -33,6 +33,8 @@ public class GUIApp extends Application {
     private TableView<MetricaAgente> tablaMetrics;
     private ObservableList<MetricaAgente> datosMetricas;
 
+    private GridPane gridTableroMenu;
+
     // Ruta por defecto para los efectos de sonido de BotonFlotante
     private final String RUTA_SONIDO = "click.wav";
 
@@ -70,26 +72,32 @@ public class GUIApp extends Application {
         Label lblTableroTitulo = new Label("Tablero Inicial Seleccionado");
         lblTableroTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 18));
 
-        GridPane gridTablero = crearGridTablero(agente.getEstadoTableroInicial(), 90);
-        boxTablero.getChildren().addAll(lblTableroTitulo, gridTablero);
+        gridTableroMenu = crearGridTablero(agente.getEstadoTableroInicial(), 90);
+        boxTablero.getChildren().addAll(lblTableroTitulo, gridTableroMenu);
 
         // --- Botones Flotantes del Menú ---
         BotonFlotante btnGenerar = new BotonFlotante("Generar nuevo tablero", "#3F51B5", RUTA_SONIDO);
         BotonFlotante btnComenzar = new BotonFlotante("Comenzar juego", "#2E7D32", RUTA_SONIDO);
         BotonFlotante btnSalir = new BotonFlotante("Salir", "#C62828", RUTA_SONIDO);
 
-        // Dimensiones amplias para el texto del menú
         btnGenerar.setMinWidth(380);
         btnComenzar.setMinWidth(380);
         btnSalir.setMinWidth(380);
 
+        // Evento Generar: Pide el tablero al AgenteGenerador (Pasos)
         btnGenerar.setOnAction(e -> {
-            agente.setEstadoTableroInicial(agente.generarEstadoAleatorio());
-            gridTablero.getChildren().clear();
-            actualizarGridTablero(gridTablero, agente.getEstadoTableroInicial(), 90);
+            try {
+                agente.pedirTableroAGenerador();
+            } catch (Exception ex) {
+                // Fallback local si el contenedor de JADE no está en red aún
+                agente.setEstadoTableroInicial(agente.generarEstadoAleatorio());
+                actualizarTableroInicialEnUI(agente.getEstadoTableroInicial());
+            }
         });
 
+        // Evento Comenzar: Inicia la resolución y despliega los paneles
         btnComenzar.setOnAction(e -> {
+            agente.iniciarJuegoConJugadores();
             mostrarDashboardResultados();
             desplegarVentanasJugadores();
         });
@@ -100,8 +108,19 @@ public class GUIApp extends Application {
         primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
+    /**
+     * Actualiza el tablero en la pantalla Menú cuando llega la respuesta de JADE.
+     */
+    public void actualizarTableroInicialEnUI(String nuevoTablero) {
+        agente.setEstadoTableroInicial(nuevoTablero);
+        if (gridTableroMenu != null) {
+            gridTableroMenu.getChildren().clear();
+            actualizarGridTablero(gridTableroMenu, nuevoTablero, 90);
+        }
+    }
+
     // =========================================================================
-    // 2. DASHBOARD PRINCIPAL (Captura - Con BotonFlotante)
+    // 2. DASHBOARD PRINCIPAL
     // =========================================================================
     public void mostrarDashboardResultados() {
         VBox root = new VBox(35);
@@ -167,6 +186,43 @@ public class GUIApp extends Application {
         primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
+    /**
+     * Actualiza la tabla de métricas en tiempo real al recibir la respuesta de un agente.
+     */
+    public void actualizarResultadoJugador(int indexAgente, int pasos, int nodos, long tiempoMs) {
+        if (datosMetricas != null && indexAgente >= 0 && indexAgente < datosMetricas.size()) {
+            datosMetricas.set(indexAgente, new MetricaAgente(
+                    nombresAgentes[indexAgente],
+                    pasos + " pasos (" + tiempoMs + " ms)",
+                    "Resuelto"
+            ));
+            evaluarGanador();
+        }
+    }
+
+    private void evaluarGanador() {
+        // Lógica para resaltar el menor número de pasos en el banner verde
+        int minPasos = Integer.MAX_VALUE;
+        int idxGanador = -1;
+
+        for (int i = 0; i < datosMetricas.size(); i++) {
+            String iterText = datosMetricas.get(i).getIteraciones();
+            if (iterText.contains("pasos")) {
+                try {
+                    int val = Integer.parseInt(iterText.split(" ")[0]);
+                    if (val < minPasos) {
+                        minPasos = val;
+                        idxGanador = i;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (idxGanador != -1) {
+            lblGanador.setText("🏆 ¡GANADOR: " + nombresAgentes[idxGanador] + " con " + minPasos + " iteraciones!");
+        }
+    }
+
     // =========================================================================
     // 3. VENTANAS INDIVIDUALES DE AGENTES
     // =========================================================================
@@ -201,7 +257,6 @@ public class GUIApp extends Application {
 
             GridPane gridJugador = crearGridTablero(historialIteraciones.get(0), 110);
 
-            // Botones Flotantes de Iteración
             BotonFlotante btnAnterior = new BotonFlotante("◄ Regresar", "#3F51B5", RUTA_SONIDO);
             BotonFlotante btnSiguiente = new BotonFlotante("Siguiente ►", "#3F51B5", RUTA_SONIDO);
 
