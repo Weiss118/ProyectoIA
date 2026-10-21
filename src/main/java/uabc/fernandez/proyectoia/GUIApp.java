@@ -3,7 +3,6 @@ package uabc.fernandez.proyectoia;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -14,277 +13,279 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 
-import jade.core.Profile;
-import jade.core.ProfileImpl;
-import jade.core.Runtime;
-import jade.wrapper.AgentContainer;
-import jade.wrapper.AgentController;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GUIApp extends Application {
 
     private Stage primaryStage;
     private AgenteGUI agente;
-    private AgentContainer mainContainer;
 
-    // Nombres e información de cada agente jugador
+    private final List<Stage> ventanasJugadores = new ArrayList<>();
+
     private final String[] nombresAgentes = {
             "Agente 1 (Hamming)",
             "Agente 2 (Manhattan)",
             "Agente 3 (Manhattan + Conflicto Lineal)"
     };
 
-    // Componentes interactivos de la pantalla de juego
-    private VBox contenedorTableroInicialJuego;
-    private VBox contenedorTableroJugador;
-    private Label lblNombreJugador;
+    private Label lblGanador;
+    private TableView<MetricaAgente> tablaMetrics;
+    private ObservableList<MetricaAgente> datosMetricas;
+
+    // Ruta por defecto para los efectos de sonido de BotonFlotante
+    private final String RUTA_SONIDO = "click.wav";
 
     @Override
     public void start(Stage stage) {
         this.primaryStage = stage;
-        this.primaryStage.setTitle("8-Puzzle - Agente GUI (JADE + JavaFX)");
+        this.primaryStage.setTitle("8-Puzzle - Dashboard Principal (Agente GUI)");
 
-        // Instancia del Agente GUI
         this.agente = new AgenteGUI();
         this.agente.setGuiApp(this);
 
-        // Iniciar entorno JADE si está disponible
-        iniciarJADE();
-
-        // Iniciar en Pantalla Menú
         mostrarPantallaMenu();
-
-        // Abrir en pantalla completa / maximizada (1920x1080)
         primaryStage.setMaximized(true);
         primaryStage.show();
     }
 
-    private void iniciarJADE() {
-        try {
-            Runtime rt = Runtime.instance();
-            Profile profile = new ProfileImpl();
-            profile.setParameter(Profile.MAIN_HOST, "localhost");
-            profile.setParameter(Profile.GUI, "true");
-
-            mainContainer = rt.createMainContainer(profile);
-            AgentController agentController = mainContainer.createNewAgent("agenteGUI", "uabc.fernandez.proyectoia.AgenteGUI", null);
-            agentController.start();
-            System.out.println("Entorno JADE iniciado correctamente.");
-        } catch (Exception e) {
-            System.err.println("Aviso JADE: Ejecutando en modo solo GUI local (" + e.getMessage() + ")");
-        }
-    }
-
-    @Override
-    public void stop() throws Exception {
-        if (mainContainer != null) {
-            mainContainer.kill();
-        }
-        super.stop();
-    }
-
     // =========================================================================
-    // 1. PANTALLA MENÚ
+    // 1. PANTALLA MENÚ (Con BotonFlotante)
     // =========================================================================
     public void mostrarPantallaMenu() {
+        cerrarVentanasJugadores();
+
         VBox root = new VBox(25);
         root.setAlignment(Pos.CENTER);
         root.setStyle("-fx-background-color: #F4F4F9; -fx-padding: 40;");
 
-        Label lblTitulo = new Label("Pantalla Menu");
-        lblTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 36));
+        Label lblTitulo = new Label("Pantalla Menu - Selección de Tablero");
+        lblTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 32));
 
-        // Cuadro Tablero Inicial (3x3)
         VBox boxTablero = new VBox(15);
         boxTablero.setAlignment(Pos.CENTER);
-        boxTablero.setStyle("-fx-border-color: #777777; -fx-border-width: 2; -fx-padding: 20; -fx-background-color: #FFFFFF; -fx-border-radius: 5; -fx-background-radius: 5;");
+        boxTablero.setStyle("-fx-border-color: #777777; -fx-border-width: 2; -fx-padding: 20; -fx-background-color: #FFFFFF; -fx-border-radius: 8; -fx-background-radius: 8;");
         boxTablero.setMaxSize(360, 380);
 
-        Label lblTableroTitulo = new Label("Tablero inicial");
-        lblTableroTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 20));
+        Label lblTableroTitulo = new Label("Tablero Inicial Seleccionado");
+        lblTableroTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 18));
 
         GridPane gridTablero = crearGridTablero(agente.getEstadoTableroInicial(), 90);
         boxTablero.getChildren().addAll(lblTableroTitulo, gridTablero);
 
-        // Estilo provisional grande para los botones
-        String estiloBotonMenu = "-fx-font-size: 18px; -fx-font-weight: bold; -fx-min-width: 280px; -fx-min-height: 55px; -fx-cursor: hand;";
+        // --- Botones Flotantes del Menú ---
+        BotonFlotante btnGenerar = new BotonFlotante("Generar nuevo tablero", "#3F51B5", RUTA_SONIDO);
+        BotonFlotante btnComenzar = new BotonFlotante("Comenzar juego", "#2E7D32", RUTA_SONIDO);
+        BotonFlotante btnSalir = new BotonFlotante("Salir", "#C62828", RUTA_SONIDO);
 
-        Button btnGenerar = new Button("Generar nuevo tablero");
-        Button btnComenzar = new Button("Comenzar juego");
-        Button btnSalir = new Button("Salir");
+        // Dimensiones amplias para el texto del menú
+        btnGenerar.setMinWidth(380);
+        btnComenzar.setMinWidth(380);
+        btnSalir.setMinWidth(380);
 
-        btnGenerar.setStyle(estiloBotonMenu);
-        btnComenzar.setStyle(estiloBotonMenu);
-        btnSalir.setStyle(estiloBotonMenu);
-
-        // Eventos
         btnGenerar.setOnAction(e -> {
             agente.setEstadoTableroInicial(agente.generarEstadoAleatorio());
             gridTablero.getChildren().clear();
             actualizarGridTablero(gridTablero, agente.getEstadoTableroInicial(), 90);
         });
 
-        btnComenzar.setOnAction(e -> mostrarPantallaJuego());
+        btnComenzar.setOnAction(e -> {
+            mostrarDashboardResultados();
+            desplegarVentanasJugadores();
+        });
+
         btnSalir.setOnAction(e -> primaryStage.close());
 
         root.getChildren().addAll(lblTitulo, boxTablero, btnGenerar, btnComenzar, btnSalir);
-
-        Scene scene = new Scene(root, 1920, 1080);
-        primaryStage.setScene(scene);
+        primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
     // =========================================================================
-    // 2. PANTALLA JUEGO
+    // 2. DASHBOARD PRINCIPAL (Captura - Con BotonFlotante)
     // =========================================================================
-    public void mostrarPantallaJuego() {
-        BorderPane root = new BorderPane();
-        root.setStyle("-fx-background-color: #F4F4F9; -fx-padding: 25;");
+    public void mostrarDashboardResultados() {
+        VBox root = new VBox(35);
+        root.setAlignment(Pos.TOP_CENTER);
+        root.setStyle("-fx-background-color: #F4F4F9; -fx-padding: 50;");
 
-        // --- ENCABEZADO ---
-        Label lblTitulo = new Label("Pantalla Juego");
-        lblTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 34));
-        BorderPane.setAlignment(lblTitulo, Pos.CENTER);
-        BorderPane.setMargin(lblTitulo, new Insets(0, 0, 20, 0));
-        root.setTop(lblTitulo);
+        Label lblTitulo = new Label("Dashboard de Monitoreo Multiagente");
+        lblTitulo.setFont(Font.font("Arial", FontWeight.BOLD, 36));
 
-        // --- PANEL IZQUIERDO (Tablero Inicial + Tabla Resumen) ---
-        VBox panelIzquierdo = new VBox(25);
-        panelIzquierdo.setAlignment(Pos.TOP_CENTER);
-        panelIzquierdo.setPrefWidth(500);
+        // Banner del Agente Ganador
+        lblGanador = new Label("🏆 ¡GANADOR: Agente 2 (Manhattan) con 8 iteraciones!");
+        lblGanador.setFont(Font.font("Arial", FontWeight.BOLD, 22));
+        lblGanador.setTextFill(Color.web("#2E7D32"));
+        lblGanador.setStyle("-fx-background-color: #E8F5E9; -fx-border-color: #2E7D32; -fx-border-width: 2; -fx-padding: 15 30 15 30; -fx-border-radius: 8; -fx-background-radius: 8;");
 
-        // Box Tablero Inicial
-        contenedorTableroInicialJuego = new VBox(12);
-        contenedorTableroInicialJuego.setAlignment(Pos.CENTER);
-        contenedorTableroInicialJuego.setStyle("-fx-border-color: #777777; -fx-border-width: 2; -fx-padding: 20; -fx-background-color: #FFFFFF; -fx-border-radius: 5; -fx-background-radius: 5;");
-        contenedorTableroInicialJuego.setMaxWidth(480);
+        // Tabla Resumen
+        tablaMetrics = new TableView<>();
+        tablaMetrics.setStyle("-fx-font-size: 18px;");
+        tablaMetrics.setMaxWidth(950);
 
-        Label lblTabInicial = new Label("Tablero inicial");
-        lblTabInicial.setFont(Font.font("Arial", FontWeight.BOLD, 20));
-        GridPane gridInicial = crearGridTablero(agente.getEstadoTableroInicial(), 80);
-        contenedorTableroInicialJuego.getChildren().addAll(lblTabInicial, gridInicial);
-
-        // --- TABLA RESUMEN ---
-        TableView<MetricaAgente> tablaMetrics = new TableView<>();
-        tablaMetrics.setStyle("-fx-font-size: 16px;");
-
-        // 1. Fijamos la altura de cada fila de datos (en píxeles)
-        double alturaFila = 42.0;
-        double alturaEncabezado = 38.0;
+        double alturaFila = 50.0;
+        double alturaEncabezado = 45.0;
         tablaMetrics.setFixedCellSize(alturaFila);
+        tablaMetrics.setPrefHeight((alturaFila * 3) + alturaEncabezado + 4);
 
-        // 2. Calculamos el alto exacto para 3 agentes + 1 encabezado (4 filas visuales en total)
-        double altoExacto = (alturaFila * 3) + alturaEncabezado + 4;
-        tablaMetrics.setPrefHeight(altoExacto);
-        tablaMetrics.setMinHeight(altoExacto);
-        tablaMetrics.setMaxHeight(altoExacto);
-
-        // Columnas
-        TableColumn<MetricaAgente, String> colAgente = new TableColumn<>("Agente");
+        TableColumn<MetricaAgente, String> colAgente = new TableColumn<>("Agente / Algoritmo");
         colAgente.setCellValueFactory(new PropertyValueFactory<>("agente"));
 
-        TableColumn<MetricaAgente, String> colIter = new TableColumn<>("Iteraciones");
+        TableColumn<MetricaAgente, String> colIter = new TableColumn<>("Iteraciones / Pasos");
         colIter.setCellValueFactory(new PropertyValueFactory<>("iteraciones"));
 
-        TableColumn<MetricaAgente, String> colPos = new TableColumn<>("Posicion");
-        colPos.setCellValueFactory(new PropertyValueFactory<>("posicion"));
+        TableColumn<MetricaAgente, String> colEstado = new TableColumn<>("Estado");
+        colEstado.setCellValueFactory(new PropertyValueFactory<>("posicion"));
 
-        tablaMetrics.getColumns().addAll(colAgente, colIter, colPos);
+        tablaMetrics.getColumns().addAll(colAgente, colIter, colEstado);
         tablaMetrics.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
-        // Datos mock
-        ObservableList<MetricaAgente> datos = FXCollections.observableArrayList(
-                new MetricaAgente("Agente 1", "-", "-"),
-                new MetricaAgente("Agente 2", "-", "-"),
-                new MetricaAgente("Agente 3", "-", "-")
+        datosMetricas = FXCollections.observableArrayList(
+                new MetricaAgente(nombresAgentes[0], "14 pasos", "Resuelto"),
+                new MetricaAgente(nombresAgentes[1], "8 pasos", "Resuelto (Ganador)"),
+                new MetricaAgente(nombresAgentes[2], "10 pasos", "Resuelto")
         );
-        tablaMetrics.setItems(datos);
+        tablaMetrics.setItems(datosMetricas);
 
-        panelIzquierdo.getChildren().addAll(contenedorTableroInicialJuego, tablaMetrics);
-        root.setLeft(panelIzquierdo);
+        // --- Botones Flotantes del Dashboard ---
+        BotonFlotante btnNuevoJuego = new BotonFlotante("Comenzar juego nuevo", "#3F51B5", RUTA_SONIDO);
+        BotonFlotante btnSalirDashboard = new BotonFlotante("Salir / Cerrar Agente", "#C62828", RUTA_SONIDO);
 
-        // --- PANEL CENTRAL (Tablero del Jugador + Navegación) ---
-        HBox panelCentralNavegacion = new HBox(25);
-        panelCentralNavegacion.setAlignment(Pos.CENTER);
+        btnNuevoJuego.setMinWidth(360);
+        btnSalirDashboard.setMinWidth(360);
 
-        String estiloBotonNavegacion = "-fx-font-size: 16px; -fx-font-weight: bold; -fx-min-width: 180px; -fx-min-height: 65px; -fx-cursor: hand;";
-
-        Button btnAnterior = new Button("◄ Jug. anterior");
-        Button btnSiguiente = new Button("Sig. jugador ►");
-
-        btnAnterior.setStyle(estiloBotonNavegacion);
-        btnSiguiente.setStyle(estiloBotonNavegacion);
-
-        lblNombreJugador = new Label(nombresAgentes[agente.getJugadorActual()]);
-        lblNombreJugador.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        lblNombreJugador.setTextFill(Color.web("#1A237E"));
-
-        // Contenedor principal con tamaño fijo proporcional (Evita el rectángulo estirado)
-        contenedorTableroJugador = new VBox(20);
-        contenedorTableroJugador.setAlignment(Pos.CENTER);
-        contenedorTableroJugador.setStyle("-fx-border-color: #333333; -fx-border-width: 3; -fx-padding: 25; -fx-background-color: #FFFFFF; -fx-border-radius: 8; -fx-background-radius: 8;");
-        contenedorTableroJugador.setPrefSize(550, 600);
-        contenedorTableroJugador.setMaxSize(550, 600);
-
-        GridPane gridJugador = crearGridTablero(agente.getEstadosJugadores()[agente.getJugadorActual()], 135);
-        contenedorTableroJugador.getChildren().addAll(lblNombreJugador, gridJugador);
-
-        // Acciones de navegación
-        btnAnterior.setOnAction(e -> {
-            int idx = (agente.getJugadorActual() - 1 + 3) % 3;
-            agente.setJugadorActual(idx);
-            actualizarTableroJugadorVisual();
+        btnNuevoJuego.setOnAction(e -> mostrarPantallaMenu());
+        btnSalirDashboard.setOnAction(e -> {
+            cerrarVentanasJugadores();
+            primaryStage.close();
         });
 
-        btnSiguiente.setOnAction(e -> {
-            int idx = (agente.getJugadorActual() + 1) % 3;
-            agente.setJugadorActual(idx);
-            actualizarTableroJugadorVisual();
-        });
+        HBox panelBotones = new HBox(30);
+        panelBotones.setAlignment(Pos.CENTER);
+        panelBotones.getChildren().addAll(btnNuevoJuego, btnSalirDashboard);
 
-        panelCentralNavegacion.getChildren().addAll(btnAnterior, contenedorTableroJugador, btnSiguiente);
-        root.setCenter(panelCentralNavegacion);
-
-        // --- PANEL INFERIOR (Botones de Iteración y Control Grandes) ---
-        HBox panelInferior = new HBox(25);
-        panelInferior.setAlignment(Pos.CENTER);
-        BorderPane.setMargin(panelInferior, new Insets(20, 0, 10, 0));
-
-        String estiloBotonInferior = "-fx-font-size: 16px; -fx-font-weight: bold; -fx-min-width: 240px; -fx-min-height: 60px; -fx-cursor: hand;";
-        String estiloBotonSalir = "-fx-font-size: 16px; -fx-font-weight: bold; -fx-min-width: 180px; -fx-min-height: 60px; -fx-cursor: hand;";
-
-        Button btnSigIter = new Button("Siguiente iteración");
-        Button btnRegIter = new Button("Regresar iteración");
-        Button btnComenzarNuevo = new Button("Comenzar juego nuevo");
-        Button btnSalirJuego = new Button("Salir");
-
-        btnSigIter.setStyle(estiloBotonInferior);
-        btnRegIter.setStyle(estiloBotonInferior);
-        btnComenzarNuevo.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-min-width: 260px; -fx-min-height: 60px; -fx-cursor: hand;");
-        btnSalirJuego.setStyle(estiloBotonSalir);
-
-        btnComenzarNuevo.setOnAction(e -> {
-            agente.setEstadoTableroInicial(agente.generarEstadoAleatorio());
-            mostrarPantallaMenu();
-        });
-
-        btnSalirJuego.setOnAction(e -> primaryStage.close());
-
-        panelInferior.getChildren().addAll(btnSigIter, btnRegIter, btnComenzarNuevo, btnSalirJuego);
-        root.setBottom(panelInferior);
-
-        Scene scene = new Scene(root, 1920, 1080);
-        primaryStage.setScene(scene);
+        root.getChildren().addAll(lblTitulo, lblGanador, tablaMetrics, panelBotones);
+        primaryStage.setScene(new Scene(root, 1920, 1080));
     }
 
     // =========================================================================
-    // MÉTODOS AUXILIARES Y RENDERIZADO DEL TABLERO
+    // 3. VENTANAS INDIVIDUALES DE AGENTES
     // =========================================================================
-    private void actualizarTableroJugadorVisual() {
-        lblNombreJugador.setText(nombresAgentes[agente.getJugadorActual()]);
-        contenedorTableroJugador.getChildren().clear();
-        GridPane grid = crearGridTablero(agente.getEstadosJugadores()[agente.getJugadorActual()], 135);
-        contenedorTableroJugador.getChildren().addAll(lblNombreJugador, grid);
+    private void desplegarVentanasJugadores() {
+        cerrarVentanasJugadores();
+
+        int[] totalPasosAgentes = {14, 8, 10};
+
+        for (int i = 0; i < 3; i++) {
+            final int idxAgente = i;
+            Stage playerStage = new Stage();
+            playerStage.setTitle("Agente Jugador - " + nombresAgentes[idxAgente]);
+
+            List<String> historialIteraciones = generarSecuenciaEjemplo(
+                    agente.getEstadoTableroInicial(),
+                    totalPasosAgentes[idxAgente]
+            );
+
+            final int[] iteracionActual = {0};
+
+            VBox root = new VBox(20);
+            root.setAlignment(Pos.CENTER);
+            root.setStyle("-fx-background-color: #FAFAFA; -fx-padding: 25;");
+
+            Label lblNombre = new Label(nombresAgentes[idxAgente]);
+            lblNombre.setFont(Font.font("Arial", FontWeight.BOLD, 22));
+            lblNombre.setTextFill(Color.web("#1A237E"));
+
+            Label lblIteracion = new Label("Iteración: 1 de " + historialIteraciones.size());
+            lblIteracion.setFont(Font.font("Arial", FontWeight.BOLD, 18));
+            lblIteracion.setTextFill(Color.web("#424242"));
+
+            GridPane gridJugador = crearGridTablero(historialIteraciones.get(0), 110);
+
+            // Botones Flotantes de Iteración
+            BotonFlotante btnAnterior = new BotonFlotante("◄ Regresar", "#3F51B5", RUTA_SONIDO);
+            BotonFlotante btnSiguiente = new BotonFlotante("Siguiente ►", "#3F51B5", RUTA_SONIDO);
+
+            btnAnterior.setMinWidth(220);
+            btnAnterior.setMinHeight(60);
+            btnSiguiente.setMinWidth(220);
+            btnSiguiente.setMinHeight(60);
+
+            btnAnterior.setOnAction(e -> {
+                if (iteracionActual[0] > 0) {
+                    iteracionActual[0]--;
+                    lblIteracion.setText("Iteración: " + (iteracionActual[0] + 1) + " de " + historialIteraciones.size());
+                    gridJugador.getChildren().clear();
+                    actualizarGridTablero(gridJugador, historialIteraciones.get(iteracionActual[0]), 110);
+                }
+            });
+
+            btnSiguiente.setOnAction(e -> {
+                if (iteracionActual[0] < historialIteraciones.size() - 1) {
+                    iteracionActual[0]++;
+                    lblIteracion.setText("Iteración: " + (iteracionActual[0] + 1) + " de " + historialIteraciones.size());
+                    gridJugador.getChildren().clear();
+                    actualizarGridTablero(gridJugador, historialIteraciones.get(iteracionActual[0]), 110);
+                }
+            });
+
+            HBox panelNavegacion = new HBox(20);
+            panelNavegacion.setAlignment(Pos.CENTER);
+            panelNavegacion.getChildren().addAll(btnAnterior, btnSiguiente);
+
+            root.getChildren().addAll(lblNombre, lblIteracion, gridJugador, panelNavegacion);
+
+            Scene scene = new Scene(root, 650, 720);
+            playerStage.setScene(scene);
+
+            playerStage.setX(60 + (i * 620));
+            playerStage.setY(150);
+
+            playerStage.show();
+            ventanasJugadores.add(playerStage);
+        }
     }
 
+    private void cerrarVentanasJugadores() {
+        for (Stage stage : ventanasJugadores) {
+            stage.close();
+        }
+        ventanasJugadores.clear();
+    }
+
+    private List<String> generarSecuenciaEjemplo(String estadoInicial, int totalPasos) {
+        List<String> secuencia = new ArrayList<>();
+        secuencia.add(estadoInicial);
+
+        String actual = estadoInicial;
+        for (int step = 0; step < totalPasos; step++) {
+            actual = hacerMovimientoAleatorioSimulado(actual);
+            secuencia.add(actual);
+        }
+        return secuencia;
+    }
+
+    private String hacerMovimientoAleatorioSimulado(String estado) {
+        char[] array = estado.toCharArray();
+        int zeroIdx = estado.indexOf('0');
+        int row = zeroIdx / 3;
+        int col = zeroIdx % 3;
+
+        List<Integer> vecinos = new ArrayList<>();
+        if (row > 0) vecinos.add(zeroIdx - 3);
+        if (row < 2) vecinos.add(zeroIdx + 3);
+        if (col > 0) vecinos.add(zeroIdx - 1);
+        if (col < 2) vecinos.add(zeroIdx + 1);
+
+        int targetIdx = vecinos.get((int) (Math.random() * vecinos.size()));
+        array[zeroIdx] = array[targetIdx];
+        array[targetIdx] = '0';
+
+        return new String(array);
+    }
+
+    // =========================================================================
+    // MÉTODOS AUXILIARES
+    // =========================================================================
     private GridPane crearGridTablero(String estado, double tileSize) {
         GridPane grid = new GridPane();
         grid.setAlignment(Pos.CENTER);
